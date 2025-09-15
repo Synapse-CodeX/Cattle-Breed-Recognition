@@ -1,4 +1,4 @@
-cat > README.md << 'EOF'
+
 # Cattle & Buffalo Breed Recognition (SIH 2025)
 
 ## 📌 Problem Statement
@@ -83,5 +83,5 @@ pip install -r requirements.txt
 
 👨‍💻 Developed by **Team MaxPool Mavericks**  
 for **Smart India Hackathon 2025**
-EOF
+
 
