@@ -5,5 +5,10 @@ numpy
 scikit-learn
 pandas
 requests
+fastapi
+uvicorn
+python-multipart
+
+
 
 
