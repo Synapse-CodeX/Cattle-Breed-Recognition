@@ -1,7 +1,9 @@
 tensorflow>=2.10
-numpy
-pandas
-scikit-learn
-flask
+streamlit
 pillow
+numpy
+scikit-learn
+pandas
+requests
+
 
