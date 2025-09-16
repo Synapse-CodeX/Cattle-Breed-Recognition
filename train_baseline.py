@@ -1,10 +1,13 @@
+import os
+import json
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
-import os
-import numpy as np
-from sklearn.metrics import classification_report, confusion_matrix
 
 DATA_DIR = "/kaggle/input/cattle-breed-recognition/dataset"
+if not os.path.exists(DATA_DIR):
+    raise FileNotFoundError(f"Dataset not found at {DATA_DIR}. Attach the Kaggle dataset before running.")
+
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 SEED = 42
@@ -40,58 +43,54 @@ test_ds = tf.keras.preprocessing.image_dataset_from_directory(
 
 class_names = train_ds.class_names
 num_classes = len(class_names)
+with open(os.path.join(SAVED_MODEL_DIR, "classes.json"), "w") as f:
+    json.dump(class_names, f)
 
 AUTOTUNE = tf.data.AUTOTUNE
 train_ds = train_ds.cache().shuffle(1000).prefetch(AUTOTUNE)
 val_ds = val_ds.cache().prefetch(AUTOTUNE)
 test_ds = test_ds.cache().prefetch(AUTOTUNE)
 
-def build_model(img_size, num_classes, dropout_rate=0.3, base_trainable=False):
-    inputs = layers.Input(shape=(img_size[0], img_size[1], 3))
-    data_augmentation = tf.keras.Sequential([
-        layers.RandomFlip("horizontal"),
-        layers.RandomRotation(0.12),
-        layers.RandomZoom(0.12),
-        layers.RandomContrast(0.12),
-        layers.RandomTranslation(0.08, 0.08),
-    ])
-    x = data_augmentation(inputs)
-    x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(img_size[0], img_size[1], 3),
-        include_top=False,
-        weights="imagenet"
-    )
-    base_model.trainable = base_trainable
-    x = base_model(x, training=False)
-    x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dropout(dropout_rate)(x)
-    outputs = layers.Dense(num_classes, activation="softmax")(x)
-    model = models.Model(inputs, outputs)
-    return model, base_model
+data_augmentation = tf.keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.12),
+    layers.RandomZoom(0.12),
+    layers.RandomContrast(0.12),
+    layers.RandomTranslation(0.08, 0.08),
+], name="data_augmentation")
 
-model, base_model = build_model(IMG_SIZE, num_classes, dropout_rate=0.3, base_trainable=False)
+base_model = tf.keras.applications.MobileNetV2(
+    input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet"
+)
+base_model.trainable = False
+
+inputs = tf.keras.Input(shape=IMG_SIZE + (3,))
+x = data_augmentation(inputs)
+x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+x = base_model(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.3)(x)
+outputs = layers.Dense(num_classes, activation="softmax")(x)
+model = tf.keras.Model(inputs, outputs)
+
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
     loss="sparse_categorical_crossentropy",
     metrics=["accuracy"]
 )
-model.summary()
 
 checkpoint_path = os.path.join(SAVED_MODEL_DIR, "best_model.h5")
 cp = callbacks.ModelCheckpoint(checkpoint_path, monitor="val_accuracy", save_best_only=True, verbose=1)
 es = callbacks.EarlyStopping(monitor="val_accuracy", patience=4, restore_best_weights=True, verbose=1)
 reduce_lr = callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6, verbose=1)
 
-print("\n===== Starting baseline training (base frozen) =====")
-history = model.fit(
+model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=BASE_EPOCHS,
     callbacks=[cp, es, reduce_lr]
 )
 
-print("\n===== Starting fine-tuning =====")
 base_model.trainable = True
 fine_tune_at = int(len(base_model.layers) * 0.75)
 for layer in base_model.layers[:fine_tune_at]:
@@ -110,7 +109,7 @@ ft_cp = callbacks.ModelCheckpoint(ft_checkpoint, monitor="val_accuracy", save_be
 ft_es = callbacks.EarlyStopping(monitor="val_accuracy", patience=5, restore_best_weights=True, verbose=1)
 ft_reduce = callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-7, verbose=1)
 
-ft_history = model.fit(
+model.fit(
     train_ds,
     validation_data=val_ds,
     epochs=FINE_TUNE_EPOCHS,
@@ -119,20 +118,4 @@ ft_history = model.fit(
 
 model.save(SAVED_MODEL_DIR)
 
-y_true = []
-y_pred = []
-for images, labels in test_ds:
-    preds = model.predict(images)
-    y_pred.extend(np.argmax(preds, axis=1).tolist())
-    y_true.extend(labels.numpy().tolist())
-
-print("\nClassification Report:")
-print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
-print("\nConfusion Matrix:")
-print(confusion_matrix(y_true, y_pred))
-
-import json
-os.makedirs("saved_model/breed_classifier", exist_ok=True)
-with open("saved_model/breed_classifier/classes.json", "w") as f:
-    json.dump(class_names, f)
 
