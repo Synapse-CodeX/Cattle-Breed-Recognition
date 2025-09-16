@@ -130,3 +130,9 @@ print("\nClassification Report:")
 print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
 print("\nConfusion Matrix:")
 print(confusion_matrix(y_true, y_pred))
+
+import json
+os.makedirs("saved_model/breed_classifier", exist_ok=True)
+with open("saved_model/breed_classifier/classes.json", "w") as f:
+    json.dump(class_names, f)
+
