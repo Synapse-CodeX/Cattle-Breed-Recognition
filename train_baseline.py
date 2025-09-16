@@ -116,6 +116,6 @@ model.fit(
     callbacks=[ft_cp, ft_es, ft_reduce]
 )
 
-model.save(SAVED_MODEL_DIR)
+model.save("saved_model/breed_classifier/best_model_finetuned.h5")
 
 
